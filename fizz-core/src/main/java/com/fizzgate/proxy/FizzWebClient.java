@@ -17,6 +17,7 @@
 
 package com.fizzgate.proxy;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -26,7 +27,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.BodyInserter;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ClientResponse;
@@ -51,6 +51,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 import static com.google.common.net.HttpHeaders.X_FORWARDED_FOR;
 
@@ -78,6 +79,11 @@ public class FizzWebClient {
 
     @Resource(name = ProxyWebClientConfig.proxyWebClient)
     private WebClient webClient;
+
+    @Resource
+    private ProxyWebClientConfig proxyWebClientConfig;
+
+    private static volatile WebClient webProxyClient;
 
     public Mono<ClientResponse> send(String traceId,
                                      HttpMethod method, String uriOrSvc, @Nullable HttpHeaders headers, @Nullable Object body) {
@@ -224,29 +230,39 @@ public class FizzWebClient {
             org.apache.logging.log4j.ThreadContext.put(Consts.TRACE_ID, traceId);
             log.debug(b.toString());
         }
+        WebClient webClientUse = webClient;
+        if (headers != null && headers.get("cxgw-internet-cross") != null) {
+            List<String> strings = headers.get("cxgw-internet-cross");
+            if (CollectionUtils.isNotEmpty(strings)) {
+                if (Objects.equals("true",strings.get(0))) {
+                    if (webProxyClient == null) {
+                        synchronized (FizzWebClient.class) {
+                            if (webProxyClient == null) {
+                                webProxyClient = proxyWebClientConfig.getWebProxyClient();
+                            }
+                        }
+                    }
+                    webClientUse = webProxyClient;
+                }
 
-        WebClient.RequestBodyUriSpec requestBodyUriSpec = webClient.method(method);
+            }
+        }
+        WebClient.RequestBodyUriSpec requestBodyUriSpec = webClientUse.method(method);
         WebClient.RequestBodySpec requestBodySpec = null;
         if (uriQryParamVals.length == 0) {
             requestBodySpec = requestBodyUriSpec.uri(uri);
         } else {
             requestBodySpec = requestBodyUriSpec.uri(uri, Arrays.stream(uriQryParamVals).toArray());
         }
-        WebClient.RequestBodySpec req = requestBodySpec.headers(
-                                                                    hdrs -> {
+
+        WebClient.RequestBodySpec req = requestBodySpec.headers(hdrs -> {
                                                                         if (headers != null) {
                                                                             headers.forEach(
-                                                                                                (h, vs) -> {
-                                                                                                    hdrs.addAll(h, vs);
-                                                                                                }
+                                                                                    hdrs::addAll
                                                                                    );
                                                                         }
                                                                         setHostHeader(uri, hdrs);
                                                                         if (systemConfig.isFizzWebClientXForwardedForEnable()) {
-                                                                            List<String> values = hdrs.get(X_FORWARDED_FOR);
-                                                                            /* if (CollectionUtils.isEmpty(values)) {
-                                                                                hdrs.add(X_FORWARDED_FOR, WebUtils.getOriginIp(null));
-                                                                            } */
                                                                             if (systemConfig.isFizzWebClientXForwardedForAppendGatewayIp()) {
                                                                                 hdrs.add(X_FORWARDED_FOR, NetworkUtils.getServerIp());
                                                                             }
@@ -278,6 +294,10 @@ public class FizzWebClient {
         }
 
         return cr;
+    }
+
+    public static void setWebProxyClient(WebClient webClient) {
+        webProxyClient = webClient;
     }
 
     private void setHostHeader(String uri, HttpHeaders headers) {

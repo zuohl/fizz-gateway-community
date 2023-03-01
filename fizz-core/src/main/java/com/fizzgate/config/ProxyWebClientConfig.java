@@ -17,6 +17,9 @@
 
 package com.fizzgate.config;
 
+import com.fizzgate.proxy.FizzWebClient;
+import com.fizzgate.util.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,13 +35,31 @@ import com.fizzgate.config.WebClientConfig;
 @ConfigurationProperties(prefix = ProxyWebClientConfig.prefix)
 public class ProxyWebClientConfig extends WebClientConfig {
 
+
+    private String httpProxyUrl = "";
+
+    public String getHttpProxyUrl() {
+        return httpProxyUrl;
+    }
+
+    public void setHttpProxyUrl(String httpProxyUrl) {
+        this.httpProxyUrl = httpProxyUrl;
+        if (StringUtils.isNotBlank(httpProxyUrl)) {
+            FizzWebClient.setWebProxyClient(super.webClient(httpProxyUrl));
+        }
+    }
     protected static final String prefix         = "proxy-webclient";
 
-    public    static final String proxyWebClient = "proxyWebClient";
+    public static final String proxyWebClient = "proxyWebClient";
 
     @Bean(proxyWebClient)
     public WebClient webClient() {
         log.info("proxy web client: {}", this);
-        return super.webClient();
+        return webClient("");
+    }
+
+    public WebClient getWebProxyClient() {
+        log.info("proxy web client: {}", this);
+        return super.webClient("");
     }
 }

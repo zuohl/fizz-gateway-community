@@ -17,6 +17,7 @@
 
 package com.fizzgate.config;
 
+import com.fizzgate.util.StringUtils;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
@@ -25,16 +26,21 @@ import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.tcp.ProxyProvider;
 import reactor.netty.tcp.TcpClient;
 
 import javax.annotation.Resource;
 import javax.net.ssl.SSLException;
+import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * @author hongqiaowei
@@ -137,8 +143,7 @@ public abstract class WebClientConfig {
     @Resource
     WebClientBuilderConfig webClientBuilderConfig;
 
-    public WebClient webClient() {
-
+    public WebClient webClient(String httpProxy) {
         HttpClient httpClient = HttpClient.create()
                                           .tcpConfiguration(
                                               tcpClient -> {
@@ -161,6 +166,12 @@ public abstract class WebClientConfig {
                                                   if (chSoKeepAlive != null) {
                                                       newTcpClient = newTcpClient.option(ChannelOption.SO_KEEPALIVE,           chSoKeepAlive);
                                                   }
+                                                  if (StringUtils.isNotBlank(httpProxy)) {
+                                                     newTcpClient.proxy(proxy -> proxy
+                                                          .type(ProxyProvider.Proxy.HTTP)
+                                                          .host(httpProxy.split(":")[0])
+                                                          .port(Integer.parseInt(httpProxy.split(":")[1])));
+                                                  }
                                                   return newTcpClient;
                                               }
                                           );
@@ -168,12 +179,6 @@ public abstract class WebClientConfig {
         if (compress != null) {
             httpClient = httpClient.compress(compress);
         }
-        /*
-        if (responseTimeout != null) {
-            httpClient = httpClient.responseTimeout(Duration.ofMillis(responseTimeout));
-        }
-        */
-
         if (trustInsecureSSL != null && trustInsecureSSL) {
             try {
                 SslContext sslContext = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();

@@ -212,7 +212,7 @@ public class PathMapping {
 			try {
 				String p = path;
 				String defaultValue = null;
-				if (path.indexOf("|") != -1) {
+				if (path.contains("|")) {
 					p = path.substring(0, path.indexOf("|"));
 					defaultValue = path.substring(path.indexOf("|") + 1);
 				}
